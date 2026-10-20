@@ -70,6 +70,7 @@ pub struct InspectDetection {
     pub root: String,
     pub capabilities: Vec<InspectCapabilityEvidence>,
     pub inspected: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<InspectDiagnostic>,
     pub project_type: InspectProjectTypeEvidence,
 }

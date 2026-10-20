@@ -19,6 +19,7 @@ async fn main() {
         Command::Check(args) => commands::run_check(args).await,
         Command::Inspect(args) => commands::run_inspect(args),
         Command::Fixtures(args) => commands::run_fixtures(args),
+        Command::Diff(args) => commands::run_diff(args),
         Command::Report(args) => commands::run_report(args),
         Command::Cache(CacheArgs::Clear(args)) => commands::run_cache_clear(args),
         Command::Version => commands::run_version(),

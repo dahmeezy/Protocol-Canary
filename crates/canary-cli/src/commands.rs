@@ -15,8 +15,8 @@ use canary_rpc::{validate_network_info, HttpRpcClient, RetryPolicy, RpcClient, R
 use canary_runner::{EnabledSurfaces, NetworkMode};
 
 use crate::cli::{
-    CacheClearArgs, CheckArgs, FixturesArgs, FixturesFormat, InspectArgs, InspectFormat,
-    OutputFormat, ReportArgs,
+    CacheClearArgs, CheckArgs, DiffArgs, FixturesArgs, FixturesFormat, InspectArgs, InspectFormat,
+    OutputFormat, ReportArgs, StatusFilter,
 };
 use crate::error::{hint_for, print_error};
 use crate::fixtures_json;
@@ -631,12 +631,12 @@ fn inspect_setup(args: &InspectArgs) -> Result<InspectSetup, CanaryError> {
     );
     let fixtures_dir = project_root.resolve_input(&settings.fixtures_dir);
 
-    let details = canary_project::detect_details(&root);
-    let detected = details.context.clone();
     let explicit_type = match config.project.project_type {
         canary_config::ProjectTypeSetting::Auto => None,
         canary_config::ProjectTypeSetting::Explicit(t) => Some(t),
     };
+    let details = canary_project::detect_details_with_override(&root, explicit_type);
+    let detected = details.context.clone();
     let resolved_type = canary_project::resolve_project_type(detected.project_type, explicit_type);
     let mut project = detected.clone();
     project.project_type = resolved_type;
@@ -1305,6 +1305,86 @@ fn format_bytes(bytes: u64) -> String {
         format!("{} {}", bytes, UNITS[0])
     } else {
         format!("{:.2} {}", size, UNITS[unit])
+    }
+}
+
+pub fn run_diff(args: DiffArgs) -> ExitCode {
+    match run_diff_inner(args) {
+        Ok(exit_code) => exit_code,
+        Err(err) => {
+            print_error(&err);
+            ExitCode::from(&err)
+        }
+    }
+}
+
+fn run_diff_inner(args: DiffArgs) -> Result<ExitCode, CanaryError> {
+    let baseline_text = std::fs::read_to_string(&args.baseline).map_err(|e| {
+        CanaryError::Configuration(format!(
+            "failed to read baseline report file {}: {e}",
+            args.baseline.display()
+        ))
+    })?;
+    let current_text = std::fs::read_to_string(&args.current).map_err(|e| {
+        CanaryError::Configuration(format!(
+            "failed to read current report file {}: {e}",
+            args.current.display()
+        ))
+    })?;
+
+    let comparison = canary_report::diff::compare_json(
+        &baseline_text,
+        &current_text,
+        canary_report::diff::CompareOptions::default(),
+    )
+    .map_err(|e| CanaryError::Configuration(format!("ineligible reports: {e}")))?;
+
+    let is_regression = comparison.verdict == canary_report::diff::Verdict::Regression;
+
+    let surface_filter_str = args.surface.map(|s| Surface::from(s).to_string());
+    let status_filter_str = args.status.map(|s| match s {
+        StatusFilter::Regressed => "regressed",
+        StatusFilter::Improved => "improved",
+        StatusFilter::Unchanged => "unchanged",
+        StatusFilter::Degraded => "degraded",
+        StatusFilter::Resolved => "resolved",
+        StatusFilter::Added => "added",
+        StatusFilter::Removed => "removed",
+        StatusFilter::Skipped => "skipped",
+    });
+
+    let mut filtered_comparison = comparison;
+    if surface_filter_str.is_some() || status_filter_str.is_some() {
+        filtered_comparison.entries.retain(|e| {
+            if let Some(ref s) = surface_filter_str {
+                if e.surface != *s {
+                    return false;
+                }
+            }
+            if let Some(st) = status_filter_str {
+                let class_str = serde_json::to_value(e.classification)
+                    .ok()
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+                    .unwrap_or_default();
+                if class_str != st {
+                    return false;
+                }
+            }
+            true
+        });
+    }
+
+    let rendered = match args.format {
+        OutputFormat::Json => filtered_comparison.to_json(),
+        OutputFormat::Terminal => filtered_comparison.to_terminal(),
+        _ => filtered_comparison.to_terminal(),
+    };
+    println!("{rendered}");
+
+    if is_regression {
+        Ok(ExitCode::CompatibilityFailure)
+    } else {
+        Ok(ExitCode::Pass)
     }
 }
 

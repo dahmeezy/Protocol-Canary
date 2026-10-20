@@ -258,6 +258,34 @@ impl Comparison {
         serde_json::to_string_pretty(self)
             .unwrap_or_else(|e| format!("{{\"error\": \"failed to serialize comparison: {e}\"}}"))
     }
+
+    /// Renders human-readable terminal output summarizing the diff.
+    pub fn to_terminal(&self) -> String {
+        let mut out = String::new();
+        out.push_str("Report Comparison:\n");
+        out.push_str(&format!(
+            "  Baseline: protocol {}, {}\n",
+            self.baseline.target_protocol, self.baseline.status
+        ));
+        out.push_str(&format!(
+            "  Current:  protocol {}, {}\n",
+            self.current.target_protocol, self.current.status
+        ));
+        out.push_str(&format!("  Verdict:  {:?}\n\n", self.verdict));
+
+        if self.entries.is_empty() {
+            out.push_str("  (no entries)\n");
+        } else {
+            out.push_str("  Entries:\n");
+            for entry in &self.entries {
+                out.push_str(&format!(
+                    "    [{}] {}: {:?} -> {:?} ({:?})\n",
+                    entry.surface, entry.id, entry.from, entry.to, entry.classification
+                ));
+            }
+        }
+        out
+    }
 }
 
 type Identity = (String, String);

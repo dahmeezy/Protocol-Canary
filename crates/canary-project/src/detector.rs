@@ -71,6 +71,14 @@ pub fn detect(root: &Path) -> ProjectContext {
 /// Runs full detection on `root`, returning the project context along with
 /// capability evidence, inspected manifests, workspace members, and diagnostics.
 pub fn detect_details(root: &Path) -> DetailedDetection {
+    detect_details_with_override(root, None)
+}
+
+/// Runs full detection on `root`, applying an optional configured project type override.
+pub fn detect_details_with_override(
+    root: &Path,
+    explicit: Option<ProjectType>,
+) -> DetailedDetection {
     let mut manifests = Vec::new();
     let mut inspected = Vec::new();
     let mut all_evidence = Vec::new();
@@ -227,7 +235,20 @@ pub fn detect_details(root: &Path) -> DetailedDetection {
         has_wasm_artifact,
     };
     let capabilities = detect_capabilities(&signals);
-    let project_type = classify(&capabilities, has_stellar_toml);
+    let detected_type = classify(&capabilities, has_stellar_toml);
+    let project_type = resolve_project_type(detected_type, explicit);
+
+    if let Some(explicit_t) = explicit {
+        if explicit_t != detected_type && detected_type != ProjectType::Unknown {
+            diagnostics.push(crate::workspace::Diagnostic {
+                code: crate::workspace::DiagnosticCode::OverrideNotice,
+                detail: format!(
+                    "configured project type {:?} overrides detected type {:?}",
+                    explicit_t, detected_type
+                ),
+            });
+        }
+    }
 
     let name = root
         .file_name()
@@ -442,6 +463,53 @@ mod tests {
             resolve_project_type(ProjectType::Soroban, None),
             ProjectType::Soroban
         );
+    }
+
+    #[test]
+    fn override_notice_emitted_when_type_differs_and_detected_not_unknown() {
+        let dir = crate::test_support::temp_dir("detect-override-notice");
+        std::fs::write(
+            dir.path.join("Cargo.toml"),
+            "[package]\nname = \"c\"\nversion = \"0.1.0\"\n\n[dependencies]\nsoroban-sdk = \"22\"\n",
+        )
+        .unwrap();
+
+        // Detected type is Soroban. Explicit type is GenericStellar.
+        let details = detect_details_with_override(&dir.path, Some(ProjectType::GenericStellar));
+        assert_eq!(details.context.project_type, ProjectType::GenericStellar);
+        let notices: Vec<_> = details
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == crate::workspace::DiagnosticCode::OverrideNotice)
+            .collect();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].detail.contains("Soroban"));
+        assert!(notices[0].detail.contains("GenericStellar"));
+
+        // When explicit type equals detected type, no notice is emitted.
+        let same = detect_details_with_override(&dir.path, Some(ProjectType::Soroban));
+        assert!(same
+            .diagnostics
+            .iter()
+            .all(|d| d.code != crate::workspace::DiagnosticCode::OverrideNotice));
+
+        // When unconfigured (None), no notice is emitted.
+        let unconfig = detect_details_with_override(&dir.path, None);
+        assert!(unconfig
+            .diagnostics
+            .iter()
+            .all(|d| d.code != crate::workspace::DiagnosticCode::OverrideNotice));
+    }
+
+    #[test]
+    fn no_override_notice_when_nothing_detected() {
+        let dir = crate::test_support::temp_dir("detect-override-empty");
+        let details = detect_details_with_override(&dir.path, Some(ProjectType::Soroban));
+        assert_eq!(details.context.project_type, ProjectType::Soroban);
+        assert!(details
+            .diagnostics
+            .iter()
+            .all(|d| d.code != crate::workspace::DiagnosticCode::OverrideNotice));
     }
 
     #[test]

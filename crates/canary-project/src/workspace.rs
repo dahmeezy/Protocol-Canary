@@ -48,6 +48,8 @@ pub enum DiagnosticCode {
     ManifestUnparseable,
     ManifestTooLarge,
     ScanBoundReached,
+    ScanBoundHit,
+    OverrideNotice,
     SymlinkSkipped,
     UnsupportedSyntax,
     WorkspaceMemberMissing,
@@ -61,6 +63,8 @@ impl DiagnosticCode {
             DiagnosticCode::ManifestUnparseable => "manifest-unparseable",
             DiagnosticCode::ManifestTooLarge => "manifest-too-large",
             DiagnosticCode::ScanBoundReached => "scan-bound-reached",
+            DiagnosticCode::ScanBoundHit => "scan-bound-hit",
+            DiagnosticCode::OverrideNotice => "override-notice",
             DiagnosticCode::SymlinkSkipped => "symlink-skipped",
             DiagnosticCode::UnsupportedSyntax => "unsupported-syntax",
             DiagnosticCode::WorkspaceMemberMissing => "workspace-member-missing",
@@ -164,7 +168,7 @@ pub fn scan_cargo_workspace(root: &Path) -> WorkspaceScan {
     }
     if total > MAX_WORKSPACE_MEMBERS {
         scan.diagnostics.push(Diagnostic {
-            code: DiagnosticCode::ScanBoundReached,
+            code: DiagnosticCode::ScanBoundHit,
             detail: format!(
                 "workspace members limit {MAX_WORKSPACE_MEMBERS} ({total} found); the rest were not scanned"
             ),
@@ -186,7 +190,7 @@ impl Budget {
         if over && !self.reported {
             self.reported = true;
             diagnostics.push(Diagnostic {
-                code: DiagnosticCode::ScanBoundReached,
+                code: DiagnosticCode::ScanBoundHit,
                 detail: format!(
                     "directories visited limit {MAX_DIRECTORIES_VISITED} or entries read limit {MAX_ENTRIES_READ}"
                 ),
@@ -302,7 +306,7 @@ fn expand_pattern(
     if segments.len() > MAX_WORKSPACE_DEPTH {
         push(
             diagnostics,
-            DiagnosticCode::ScanBoundReached,
+            DiagnosticCode::ScanBoundHit,
             format!(
                 "workspace member pattern {pattern:?} is deeper than {MAX_WORKSPACE_DEPTH} levels"
             ),

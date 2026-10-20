@@ -227,6 +227,9 @@ pub enum LockError {
         "lockfile {path} is being written by another process; retry once {temp} no longer exists"
     )]
     Busy { path: PathBuf, temp: PathBuf },
+
+    #[error("lockfile mismatch for {path}: {reason}")]
+    LockMismatchError { path: PathBuf, reason: String },
 }
 
 impl From<LockError> for CanaryError {
@@ -241,6 +244,34 @@ impl From<LockError> for CanaryError {
 /// regular file, a file over 64 KiB, and non-UTF-8 content. The size limit is
 /// enforced on the bytes actually read as well as on the reported length, so
 /// a file that grows while it is being read cannot exceed it.
+/// Validates a lockfile against a report's `packDigest` and `targetProtocol`.
+pub fn validate_lock_against_report(
+    lock: &LockFile,
+    lock_path: &Path,
+    pack_digest: &str,
+    target_protocol: u32,
+) -> Result<(), LockError> {
+    if lock.fixtures.protocol != target_protocol {
+        return Err(LockError::LockMismatchError {
+            path: lock_path.to_path_buf(),
+            reason: format!(
+                "protocol mismatch: lockfile pins protocol {}, report targets protocol {}",
+                lock.fixtures.protocol, target_protocol
+            ),
+        });
+    }
+    if lock.fixtures.pack_digest != pack_digest {
+        return Err(LockError::LockMismatchError {
+            path: lock_path.to_path_buf(),
+            reason: format!(
+                "packDigest mismatch: lockfile pins {}, report has {}",
+                lock.fixtures.pack_digest, pack_digest
+            ),
+        });
+    }
+    Ok(())
+}
+
 pub fn load_lock(path: &Path) -> Result<LockFile, LockError> {
     let read_error = |source| LockError::Read {
         path: path.to_path_buf(),

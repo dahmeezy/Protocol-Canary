@@ -439,6 +439,28 @@ fn loads_a_regular_file() {
 }
 
 #[test]
+fn lock_validation_against_report_matches_and_diverges() {
+    let lock = full_lock();
+    let path = PathBuf::from(".stellar-canary.lock");
+
+    // Match
+    assert!(canary_config::validate_lock_against_report(&lock, &path, DIGEST, 28).is_ok());
+
+    // Protocol mismatch
+    let err_proto =
+        canary_config::validate_lock_against_report(&lock, &path, DIGEST, 29).unwrap_err();
+    assert!(matches!(err_proto, LockError::LockMismatchError { .. }));
+    assert!(err_proto.to_string().contains("protocol mismatch"));
+
+    // Digest mismatch
+    let other_digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    let err_digest =
+        canary_config::validate_lock_against_report(&lock, &path, other_digest, 28).unwrap_err();
+    assert!(matches!(err_digest, LockError::LockMismatchError { .. }));
+    assert!(err_digest.to_string().contains("packDigest mismatch"));
+}
+
+#[test]
 fn a_missing_file_is_a_read_error() {
     let dir = Scratch::new("missing");
     let error = load_lock(&dir.0.join(LOCK_FILE_NAME)).unwrap_err();

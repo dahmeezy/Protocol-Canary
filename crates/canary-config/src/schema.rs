@@ -359,4 +359,13 @@ mod tests {
         let result: Result<ProjectTypeSetting, _> = serde_json::from_str("\"not-a-type\"");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn unsupported_project_type_string_fails_deserialization() {
+        let bad_toml = "version = 1\nprotocol = 28\n[project]\ntype = \"invalid-project-type\"\n";
+        let parsed: Result<ConfigFile, _> = toml::from_str(bad_toml);
+        assert!(parsed.is_err());
+        let err_msg = parsed.unwrap_err().to_string();
+        assert!(err_msg.contains("invalid project type"));
+    }
 }

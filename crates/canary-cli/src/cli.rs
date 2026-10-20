@@ -50,6 +50,8 @@ pub enum Command {
     Inspect(InspectArgs),
     /// List fixtures available for a protocol.
     Fixtures(FixturesArgs),
+    /// Compare two JSON reports.
+    Diff(DiffArgs),
     /// Render a previously generated JSON report.
     Report(ReportArgs),
     /// Manage the local result cache.
@@ -447,6 +449,41 @@ pub struct FixturesArgs {
     /// Shorthand for --format json.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+/// Status choices accepted by `diff --status`.
+pub enum StatusFilter {
+    Regressed,
+    Improved,
+    Unchanged,
+    Degraded,
+    Resolved,
+    Added,
+    Removed,
+    Skipped,
+}
+
+#[derive(Debug, Parser)]
+/// Arguments for the `stellar-canary diff` subcommand ([`Command::Diff`]).
+pub struct DiffArgs {
+    /// Path to the baseline JSON report.
+    pub baseline: PathBuf,
+
+    /// Path to the current JSON report.
+    pub current: PathBuf,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Terminal)]
+    pub format: OutputFormat,
+
+    /// Filter displayed entries by surface.
+    #[arg(long, value_enum)]
+    pub surface: Option<SurfaceFilter>,
+
+    /// Filter displayed entries by transition classification status.
+    #[arg(long, value_enum)]
+    pub status: Option<StatusFilter>,
 }
 
 #[derive(Debug, Parser)]
